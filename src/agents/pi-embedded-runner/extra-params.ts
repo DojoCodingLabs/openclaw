@@ -688,30 +688,67 @@ function applyPostPluginStreamWrappers(
   ctx.agent.streamFn = createOpenRouterSystemCacheWrapper(ctx.agent.streamFn);
   ctx.agent.streamFn = createOpenAIStringContentWrapper(ctx.agent.streamFn);
 
-  // DOJ-3088: Strip `store` from completions API payloads for providers that
-  // don't support it (e.g. Google Gemini). pi-ai's detectCompat() defaults
-  // supportsStore=true for unknown providers and injects `store: false` which
-  // causes 400 errors on Google's OpenAI-compatible endpoint.
-  if (ctx.model?.compat && typeof ctx.model.compat === "object") {
-    const modelCompat = ctx.model.compat as Record<string, unknown>;
-    if (modelCompat.supportsStore === false) {
-      const prevStreamFn = ctx.agent.streamFn ?? streamSimple;
-      ctx.agent.streamFn = (model, context, options) => {
-        const originalOnPayload = options?.onPayload;
-        return prevStreamFn(model, context, {
-          ...options,
-          onPayload: (payload) => {
-            if (payload && typeof payload === "object") {
-              const payloadObj = payload as Record<string, unknown>;
-              if ("store" in payloadObj) {
-                delete payloadObj.store;
-              }
+  // DOJ-3088: Strip OpenAI-native fields (`store`) from completions API payloads
+  // for providers that don't support them. `store` is an OpenAI-native field
+  // that only OpenAI and Azure OpenAI natively understand. For any other
+  // provider using the openai-completions API (Google, DeepSeek, Fireworks,
+  // Groq, etc.), this field causes 400 errors.
+  //
+  // Taxonomy via models.dev/api.json (verified 2026-04):
+  //   - Native OpenAI (@ai-sdk/openai): openai, perplexity-agent, vivgrid
+  //   - Native Azure (@ai-sdk/azure): azure, azure-cognitive-services
+  //   - OpenAI-compatible (@ai-sdk/openai-compatible): ~79 providers (Google
+  //     via generativelanguage OpenAI endpoint, DeepSeek, Fireworks, Groq,
+  //     IBM Granite, Together, etc.) — none support `store`.
+  //
+  // pi-ai's detectCompat() only recognizes a few non-standard providers; for
+  // everything else (including Google) it injects `store: false` by default.
+  // This wrapper removes `store` for any provider that isn't OpenAI-native.
+  {
+    const NATIVE_OPENAI_STORE_PROVIDERS = new Set([
+      "openai",
+      "openai-codex",
+      "azure",
+      "azure-openai",
+      "azure-openai-responses",
+      "perplexity-agent",
+      "vivgrid",
+    ]);
+    const prevStreamFn = ctx.agent.streamFn ?? streamSimple;
+    ctx.agent.streamFn = (model, context, options) => {
+      const provider = typeof model.provider === "string" ? model.provider : "";
+      const api = typeof model.api === "string" ? model.api : "";
+      const baseUrl = typeof model.baseUrl === "string" ? model.baseUrl : "";
+      // Store is an OpenAI-native field. It's valid for native OpenAI/Azure
+      // routes; strip it for any other provider using the openai-completions
+      // API to avoid 400 errors from providers that reject unknown fields.
+      const isNativeOpenAIRoute =
+        NATIVE_OPENAI_STORE_PROVIDERS.has(provider) ||
+        baseUrl.includes("api.openai.com") ||
+        baseUrl.includes(".openai.azure.com");
+      const shouldStripStore = api === "openai-completions" && !isNativeOpenAIRoute;
+      if (!shouldStripStore) {
+        return prevStreamFn(model, context, options);
+      }
+      const originalOnPayload = options?.onPayload;
+      return prevStreamFn(model, context, {
+        ...options,
+        onPayload: (payload) => {
+          if (payload && typeof payload === "object") {
+            const payloadObj = payload as Record<string, unknown>;
+            if ("store" in payloadObj) {
+              log.info(
+                `[store-strip] removed store field from ${provider}/${String(
+                  model.id ?? "unknown",
+                )} payload (non-native OpenAI route)`,
+              );
+              delete payloadObj.store;
             }
-            return originalOnPayload?.(payload, model);
-          },
-        });
-      };
-    }
+          }
+          return originalOnPayload?.(payload, model);
+        },
+      });
+    };
   }
 
   if (!ctx.providerWrapperHandled) {
