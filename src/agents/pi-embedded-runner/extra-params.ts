@@ -688,6 +688,32 @@ function applyPostPluginStreamWrappers(
   ctx.agent.streamFn = createOpenRouterSystemCacheWrapper(ctx.agent.streamFn);
   ctx.agent.streamFn = createOpenAIStringContentWrapper(ctx.agent.streamFn);
 
+  // DOJ-3088: Strip `store` from completions API payloads for providers that
+  // don't support it (e.g. Google Gemini). pi-ai's detectCompat() defaults
+  // supportsStore=true for unknown providers and injects `store: false` which
+  // causes 400 errors on Google's OpenAI-compatible endpoint.
+  if (ctx.model?.compat && typeof ctx.model.compat === "object") {
+    const modelCompat = ctx.model.compat as Record<string, unknown>;
+    if (modelCompat.supportsStore === false) {
+      const prevStreamFn = ctx.agent.streamFn ?? streamSimple;
+      ctx.agent.streamFn = (model, context, options) => {
+        const originalOnPayload = options?.onPayload;
+        return prevStreamFn(model, context, {
+          ...options,
+          onPayload: (payload) => {
+            if (payload && typeof payload === "object") {
+              const payloadObj = payload as Record<string, unknown>;
+              if ("store" in payloadObj) {
+                delete payloadObj.store;
+              }
+            }
+            return originalOnPayload?.(payload, model);
+          },
+        });
+      };
+    }
+  }
+
   if (!ctx.providerWrapperHandled) {
     // Guard Google-family payloads against invalid negative thinking budgets
     // emitted by upstream model-ID heuristics for Gemini 3.1 variants.
