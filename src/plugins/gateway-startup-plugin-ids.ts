@@ -137,12 +137,31 @@ function shouldConsiderForGatewayStartup(params: {
   startupDreamingPluginIds: ReadonlySet<string>;
   memorySlotStartupPluginId?: string;
   contextEngineSlotStartupPluginId?: string;
+  pluginsConfig: NormalizedPluginsConfig;
+  activationSourcePlugins: NormalizedPluginsConfig;
 }): boolean {
   if (params.manifest?.activation?.onStartup === true) {
     return true;
   }
   if (params.contextEngineSlotStartupPluginId === params.plugin.pluginId) {
     return true;
+  }
+  // DOJ-4055 (dojo fork): a non-bundled plugin that the operator has explicitly
+  // enabled in config (entries.{id}.enabled === true) or pinned via plugins.allow
+  // is intended to load at gateway startup even when the plugin manifest does not
+  // declare activation.onStartup. Without this branch, tool/hook/route plugins
+  // that do not also expose a channel/provider/memory contract are silently
+  // dropped from the startup plan and never imported.
+  if (params.plugin.origin !== "bundled") {
+    const entryEnabled =
+      params.pluginsConfig.entries[params.plugin.pluginId]?.enabled === true ||
+      params.activationSourcePlugins.entries[params.plugin.pluginId]?.enabled === true;
+    const allowed =
+      params.pluginsConfig.allow.includes(params.plugin.pluginId) ||
+      params.activationSourcePlugins.allow.includes(params.plugin.pluginId);
+    if (entryEnabled || allowed) {
+      return true;
+    }
   }
   if (!isGatewayStartupMemoryPlugin(params.plugin)) {
     return false;
@@ -738,6 +757,8 @@ export function resolveGatewayStartupPluginPlanFromRegistry(params: {
           startupDreamingPluginIds,
           memorySlotStartupPluginId,
           contextEngineSlotStartupPluginId,
+          pluginsConfig,
+          activationSourcePlugins,
         })
       ) {
         return false;
