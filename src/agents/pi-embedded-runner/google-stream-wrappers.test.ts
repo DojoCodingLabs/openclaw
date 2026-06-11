@@ -94,6 +94,7 @@ describe("sanitizeGoogleThinkingPayload — gemini-2.5-pro zero budget", () => {
     });
     expect(payload.generationConfig.thinkingConfig).toEqual({
       thinkingLevel: "MINIMAL",
+      includeThoughts: true,
     });
   });
 

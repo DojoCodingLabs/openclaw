@@ -630,6 +630,13 @@ function sanitizeGoogleThinkingConfigContainer(params: {
     delete thinkingConfigObj.thinkingBudget;
     if (mappedLevel) {
       thinkingConfigObj.thinkingLevel = mappedLevel;
+      // Gemini-3 thinks regardless, but only RETURNS thought-marked parts (part.thought)
+      // when includeThoughts is requested. pi-ai's google transport routes those parts to
+      // the reasoning channel (thinking blocks) instead of delta.content. Pairs with the
+      // resolveReasoningOutputMode "native" override for Gemini-3 (provider-utils.ts): with
+      // native mode the manual <think>/<final> protocol is gone, and native thought parts
+      // carry the reasoning — fixing the P1 prose leak + the reasoning-only loop hang.
+      thinkingConfigObj.includeThoughts = true;
     }
     if (Object.keys(thinkingConfigObj).length === 0) {
       delete configObj.thinkingConfig;

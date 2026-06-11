@@ -63,6 +63,57 @@ describe("extra-params: Google thinking payload compatibility", () => {
     expect(payload.config?.thinkingConfig?.thinkingLevel).toBe("HIGH");
   });
 
+  it("requests includeThoughts for Gemini 3 thinking-level models (native thought routing)", () => {
+    const payload = runExtraParamsCase({
+      applyProvider: "google",
+      applyModelId: "gemini-3.5-flash",
+      model: {
+        api: "google-generative-ai",
+        provider: "google",
+        id: "gemini-3.5-flash",
+      } as unknown as Model<"openai-completions">,
+      thinkingLevel: "medium",
+      payload: {
+        contents: [],
+        config: {
+          thinkingConfig: {},
+        },
+      },
+    }).payload as {
+      config?: {
+        thinkingConfig?: Record<string, unknown>;
+      };
+    };
+
+    expect(payload.config?.thinkingConfig?.thinkingLevel).toBe("MEDIUM");
+    expect(payload.config?.thinkingConfig?.includeThoughts).toBe(true);
+  });
+
+  it("does not request includeThoughts for non-Gemini-3 Google models", () => {
+    const payload = runExtraParamsCase({
+      applyProvider: "google",
+      applyModelId: "gemini-2.5-pro",
+      model: {
+        api: "google-generative-ai",
+        provider: "google",
+        id: "gemini-2.5-pro",
+      } as unknown as Model<"openai-completions">,
+      thinkingLevel: "high",
+      payload: {
+        contents: [],
+        config: {
+          thinkingConfig: {},
+        },
+      },
+    }).payload as {
+      config?: {
+        thinkingConfig?: Record<string, unknown>;
+      };
+    };
+
+    expect(payload.config?.thinkingConfig?.includeThoughts).toBeUndefined();
+  });
+
   it("passes cachedContent through Google extra params", () => {
     const { options } = runGoogleExtraParamsCase({
       cfg: {

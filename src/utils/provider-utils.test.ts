@@ -66,6 +66,45 @@ describe("resolveReasoningOutputMode", () => {
   });
 });
 
+describe("resolveReasoningOutputMode — Gemini-3 native thought routing (P1 leak/loop fix)", () => {
+  beforeEach(() => {
+    resolveProviderReasoningOutputModeWithPluginMock.mockReset();
+    resolveProviderReasoningOutputModeWithPluginMock.mockReturnValue(undefined);
+  });
+
+  it.each(["gemini-3.5-flash", "gemini-3.1-pro-preview", "google/gemini-3.5-flash"] as const)(
+    "returns native for Gemini-3 thinking-level model %s instead of the manual tag protocol",
+    (modelId) => {
+      expect(
+        resolveReasoningOutputMode({
+          provider: "google-generative-ai",
+          modelId,
+          workspaceDir: process.cwd(),
+        }),
+      ).toBe("native");
+    },
+  );
+
+  it("keeps tagged for non-Gemini-3 google-generative-ai models", () => {
+    expect(
+      resolveReasoningOutputMode({
+        provider: "google-generative-ai",
+        modelId: "gemini-2.5-flash",
+        workspaceDir: process.cwd(),
+      }),
+    ).toBe("tagged");
+  });
+
+  it("isReasoningTagProvider is false for Gemini-3 flash (native, not tagged)", () => {
+    expect(
+      isReasoningTagProvider("google-generative-ai", {
+        modelId: "gemini-3.5-flash",
+        workspaceDir: process.cwd(),
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("isReasoningTagProvider", () => {
   beforeEach(() => {
     resolveProviderReasoningOutputModeWithPluginMock.mockReset();
