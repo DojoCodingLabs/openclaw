@@ -1,0 +1,43 @@
+name: Cut Dojo fork tarball
+
+# One-shot: build the fork on a CI runner (16GB) and publish the tarball as a
+# GitHub Release, so the DojoOS gateway Dockerfile can pin it. Replaces the
+# manual `npm pack` that OOMs on low-RAM laptops.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v2026.5.22-dojo.3)'
+        required: true
+
+jobs:
+  cut:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-env
+        with:
+          install-bun: "false"
+      - name: Build fork + Control UI
+        run: |
+          node scripts/build-all.mjs
+          node scripts/ui.js build
+      - name: Pack tarball
+        id: pack
+        run: |
+          npm pack
+          TGZ="$(ls openclaw-*.tgz)"
+          echo "tgz=$TGZ" >> "$GITHUB_OUTPUT"
+          echo "SHA256:"; sha256sum "$TGZ"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.tag }}" "${{ steps.pack.outputs.tgz }}" \
+            --title "${{ inputs.tag }}" \
+            --notes "AGT-051 — route retry steers through the system channel (nudge leak fix)."
+          echo "SHA256 for the plugin Dockerfile ARG:"
+          sha256sum "${{ steps.pack.outputs.tgz }}"
