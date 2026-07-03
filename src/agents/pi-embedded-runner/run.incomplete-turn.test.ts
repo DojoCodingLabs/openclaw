@@ -64,12 +64,12 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(warnMessages().join("\n")).not.toContain(text);
   }
 
-  function runAttemptCall(index: number): { prompt?: string } {
+  function runAttemptCall(index: number): { prompt?: string; transcriptPrompt?: string } {
     const call = mockedRunEmbeddedAttempt.mock.calls[index];
     if (!call) {
       throw new Error(`Expected run embedded attempt call ${index}`);
     }
-    return call[0] as { prompt?: string };
+    return call[0] as { prompt?: string; transcriptPrompt?: string };
   }
 
   it("emits the before_agent_run hook block message as the agent payload", async () => {
@@ -454,6 +454,43 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     });
 
     expect(retryInstruction).toContain("Do not restate the plan");
+  });
+
+  it("keeps the planning-only steer out of the persisted user message (AGT-051)", async () => {
+    // AGT-051: the act-now steer was concatenated onto the user prompt, so it
+    // streamed into the user's bubble and persisted as a role="user" row. The
+    // steer must ride the system channel — the retry's transcriptPrompt (the
+    // recorded user message) must stay the ORIGINAL prompt, while the steer
+    // travels via the prompt/transcript diff that resolveRuntimeContextPromptParts
+    // routes into the system prompt.
+    const ACTIONABLE_PROMPT = "Please inspect the code and fix the failing test.";
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["I'll inspect the code and fix the failing test."],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({ assistantTexts: ["Done — the test passes now."] }),
+    );
+
+    await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      prompt: ACTIONABLE_PROMPT,
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-agt-051-planning-steer-system-channel",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    const retry = runAttemptCall(1);
+    // (a) the persisted user message is the ORIGINAL prompt, with no steer text.
+    expect(retry.transcriptPrompt).toBe(ACTIONABLE_PROMPT);
+    expect(retry.transcriptPrompt ?? "").not.toContain("Do not restate the plan");
+    // (b) the steer still reaches the model, carried OUTSIDE the user message so
+    // it lands on the system channel (never persisted as a user bubble).
+    expect(retry.prompt).toContain(PLANNING_ONLY_RETRY_INSTRUCTION);
+    expect(retry.prompt).not.toBe(retry.transcriptPrompt);
   });
 
   it("retries reasoning-only GPT turns with a visible-answer continuation instruction", async () => {

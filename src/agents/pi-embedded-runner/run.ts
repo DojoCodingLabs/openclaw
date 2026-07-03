@@ -1339,6 +1339,11 @@ export async function runEmbeddedPiAgent(
             promptAdditions.length > 0
               ? `${basePrompt}\n\n${promptAdditions.join("\n\n")}`
               : basePrompt;
+          // AGT-051: the recorded user message stays the clean base prompt so the
+          // prompt/transcript diff routes the retry steers through the system
+          // channel — never persisted as a user bubble.
+          const attemptTranscriptPrompt =
+            promptAdditions.length > 0 ? basePrompt : params.transcriptPrompt;
           const resolvedStreamApiKey = resolveAttemptDispatchApiKey({
             apiKeyInfo,
             runtimeAuthState,
@@ -1430,7 +1435,7 @@ export async function runEmbeddedPiAgent(
             contextWindowInfo: ctxInfo,
             skillsSnapshot: params.skillsSnapshot,
             prompt,
-            transcriptPrompt: params.transcriptPrompt,
+            transcriptPrompt: attemptTranscriptPrompt,
             currentInboundEventKind: params.currentInboundEventKind,
             currentInboundContext: params.currentInboundContext,
             images: params.images,
