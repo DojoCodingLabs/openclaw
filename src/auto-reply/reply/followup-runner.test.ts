@@ -1395,6 +1395,70 @@ describe("createFollowupRunner progress forwarding", () => {
     expect(onCommandOutput).not.toHaveBeenCalled();
     expect(sessionStore.main.compactionCount).toBe(1);
   });
+
+  // DOJ-5368: verbose is keyed on the per-channel group session, so an owner or
+  // any member enabling it must NOT stream tool-progress / tool-output to the
+  // whole channel. A populated run.groupId marks the shared surface; the gate
+  // fires regardless of which participant's turn this is.
+  it("suppresses queued follow-up progress on a shared surface even when verbose is on", async () => {
+    const onToolStart = vi.fn(async () => {});
+    const onItemEvent = vi.fn(async () => {});
+    const onCommandOutput = vi.fn(async () => {});
+
+    runEmbeddedPiAgentMock.mockImplementationOnce(
+      async (args: {
+        onAgentEvent?: (evt: { stream: string; data: Record<string, unknown> }) => Promise<void>;
+        onToolResult?: (payload: { text: string }) => Promise<void>;
+        shouldEmitToolResult?: () => boolean;
+        shouldEmitToolOutput?: () => boolean;
+      }) => {
+        // The gate the agent honours before emitting anything to the channel is
+        // off despite verboseLevel "on", because run.groupId marks a shared
+        // surface. A well-behaved agent therefore never calls onToolResult.
+        expect(args.shouldEmitToolResult?.()).toBe(false);
+        expect(args.shouldEmitToolOutput?.()).toBe(false);
+        await args.onAgentEvent?.({
+          stream: "tool",
+          data: { phase: "start", name: "exec", args: { command: "echo leak" } },
+        });
+        await args.onAgentEvent?.({
+          stream: "command_output",
+          data: { phase: "chunk", output: "leaked output" },
+        });
+        return { payloads: [{ text: "final" }], meta: { agentMeta: {} } };
+      },
+    );
+
+    const runner = createFollowupRunner({
+      opts: { onToolStart, onItemEvent, onCommandOutput },
+      typing: createMockTypingController(),
+      typingMode: "instant",
+      defaultModel: "claude",
+    });
+
+    await runner(
+      createQueuedRun({
+        originatingChannel: "discord",
+        originatingTo: "channel:C1",
+        originatingAccountId: "acct-1",
+        run: {
+          messageProvider: "discord",
+          sourceReplyDeliveryMode: "message_tool_only",
+          verboseLevel: "on",
+          groupId: "discord:channel:C1",
+        },
+      }),
+    );
+
+    expect(onToolStart).not.toHaveBeenCalled();
+    expect(onCommandOutput).not.toHaveBeenCalled();
+    // No tool-progress payload is ever routed to the shared channel.
+    expect(routeReplyMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ text: "🛠️ Exec: echo leak" }),
+      }),
+    );
+  });
 });
 
 describe("createFollowupRunner compaction", () => {

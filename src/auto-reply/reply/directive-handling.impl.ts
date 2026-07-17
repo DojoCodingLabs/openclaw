@@ -28,10 +28,12 @@ import {
   formatInternalExecPersistenceDeniedText,
   formatInternalVerboseCurrentReplyOnlyText,
   formatInternalVerbosePersistenceDeniedText,
+  formatSharedChannelDiagnosticDeniedText,
   enqueueModeSwitchEvents,
   withOptions,
 } from "./directive-handling.shared.js";
 import type { ElevatedLevel, ReasoningLevel, ThinkLevel } from "./directives.js";
+import { isMultiUserSurface } from "./multi-user-surface.js";
 import { refreshQueuedFollowupSession } from "./queue.js";
 import { resolveRuntimePolicySessionKey } from "./runtime-policy-session-key.js";
 
@@ -91,6 +93,13 @@ export async function handleDirectiveOnly(
     messageProvider: params.messageProvider,
     surface: params.surface,
     gatewayClientScopes: params.gatewayClientScopes,
+  });
+  // DOJ-5368: on shared surfaces /verbose, /trace, /reasoning are non-sticky —
+  // egress is already gated off, and persisting a level here would leave a
+  // sticky footgun on the per-channel session.
+  const persistDiagnosticsAllowed = !isMultiUserSurface({
+    groupId: sessionEntry.groupId,
+    chatType: params.ctx?.ChatType ?? sessionEntry.chatType,
   });
 
   const modelInfo = await maybeHandleModelDirectiveInfo({
@@ -365,9 +374,12 @@ export async function handleDirectiveOnly(
       (directives.fastMode !== undefined || directives.clearFastMode)) ||
     (directives.hasVerboseDirective &&
       Boolean(directives.verboseLevel) &&
-      allowInternalVerbosePersistence) ||
-    (directives.hasTraceDirective && Boolean(directives.traceLevel)) ||
-    (directives.hasReasoningDirective && Boolean(directives.reasoningLevel)) ||
+      allowInternalVerbosePersistence &&
+      persistDiagnosticsAllowed) ||
+    (directives.hasTraceDirective && Boolean(directives.traceLevel) && persistDiagnosticsAllowed) ||
+    (directives.hasReasoningDirective &&
+      Boolean(directives.reasoningLevel) &&
+      persistDiagnosticsAllowed) ||
     (directives.hasElevatedDirective && Boolean(directives.elevatedLevel)) ||
     (directives.hasExecDirective && directives.hasExecOptions && allowInternalExecPersistence) ||
     Boolean(modelSelection) ||
@@ -379,7 +391,9 @@ export async function handleDirectiveOnly(
       directives.fastMode !== currentFastMode) ||
     (directives.clearFastMode && currentFastMode !== fastModeState.enabled);
   let reasoningChanged =
-    directives.hasReasoningDirective && directives.reasoningLevel !== undefined;
+    persistDiagnosticsAllowed &&
+    directives.hasReasoningDirective &&
+    directives.reasoningLevel !== undefined;
   if (shouldPersistSessionEntry) {
     if (directives.clearThinkLevel) {
       delete sessionEntry.thinkingLevel;
@@ -401,14 +415,19 @@ export async function handleDirectiveOnly(
     if (
       directives.hasVerboseDirective &&
       directives.verboseLevel &&
-      allowInternalVerbosePersistence
+      allowInternalVerbosePersistence &&
+      persistDiagnosticsAllowed
     ) {
       applyVerboseOverride(sessionEntry, directives.verboseLevel);
     }
-    if (directives.hasTraceDirective && directives.traceLevel) {
+    if (directives.hasTraceDirective && directives.traceLevel && persistDiagnosticsAllowed) {
       applyTraceOverride(sessionEntry, directives.traceLevel);
     }
-    if (directives.hasReasoningDirective && directives.reasoningLevel) {
+    if (
+      persistDiagnosticsAllowed &&
+      directives.hasReasoningDirective &&
+      directives.reasoningLevel
+    ) {
       if (directives.reasoningLevel === "off") {
         // Persist explicit off so it overrides model-capability defaults.
         sessionEntry.reasoningLevel = "off";
@@ -543,42 +562,49 @@ export async function handleDirectiveOnly(
   }
   if (directives.hasVerboseDirective && directives.verboseLevel) {
     parts.push(
-      !allowInternalVerbosePersistence
-        ? formatDirectiveAck(formatInternalVerboseCurrentReplyOnlyText())
-        : directives.verboseLevel === "off"
-          ? formatDirectiveAck("Verbose logging disabled.")
-          : directives.verboseLevel === "full"
-            ? formatDirectiveAck("Verbose logging set to full.")
-            : formatDirectiveAck("Verbose logging enabled."),
+      !persistDiagnosticsAllowed
+        ? formatDirectiveAck(formatSharedChannelDiagnosticDeniedText("Verbose logging"))
+        : !allowInternalVerbosePersistence
+          ? formatDirectiveAck(formatInternalVerboseCurrentReplyOnlyText())
+          : directives.verboseLevel === "off"
+            ? formatDirectiveAck("Verbose logging disabled.")
+            : directives.verboseLevel === "full"
+              ? formatDirectiveAck("Verbose logging set to full.")
+              : formatDirectiveAck("Verbose logging enabled."),
     );
   }
   if (directives.hasTraceDirective && directives.traceLevel) {
     parts.push(
-      directives.traceLevel === "off"
-        ? formatDirectiveAck("Trace disabled.")
-        : directives.traceLevel === "raw"
-          ? formatDirectiveAck(
-              "Trace set to raw. Warning: trace output may contain sensitive information.",
-            )
-          : formatDirectiveAck(
-              "Trace enabled. Warning: trace output may contain sensitive information.",
-            ),
+      !persistDiagnosticsAllowed
+        ? formatDirectiveAck(formatSharedChannelDiagnosticDeniedText("Trace"))
+        : directives.traceLevel === "off"
+          ? formatDirectiveAck("Trace disabled.")
+          : directives.traceLevel === "raw"
+            ? formatDirectiveAck(
+                "Trace set to raw. Warning: trace output may contain sensitive information.",
+              )
+            : formatDirectiveAck(
+                "Trace enabled. Warning: trace output may contain sensitive information.",
+              ),
     );
   }
   if (
     directives.hasVerboseDirective &&
     directives.verboseLevel &&
-    !allowInternalVerbosePersistence
+    !allowInternalVerbosePersistence &&
+    persistDiagnosticsAllowed
   ) {
     parts.push(formatDirectiveAck(formatInternalVerbosePersistenceDeniedText()));
   }
   if (directives.hasReasoningDirective && directives.reasoningLevel) {
     parts.push(
-      directives.reasoningLevel === "off"
-        ? formatDirectiveAck("Reasoning visibility disabled.")
-        : directives.reasoningLevel === "stream"
-          ? formatDirectiveAck("Reasoning stream enabled (Telegram only).")
-          : formatDirectiveAck("Reasoning visibility enabled."),
+      !persistDiagnosticsAllowed
+        ? formatDirectiveAck(formatSharedChannelDiagnosticDeniedText("Reasoning visibility"))
+        : directives.reasoningLevel === "off"
+          ? formatDirectiveAck("Reasoning visibility disabled.")
+          : directives.reasoningLevel === "stream"
+            ? formatDirectiveAck("Reasoning stream enabled (Telegram only).")
+            : formatDirectiveAck("Reasoning visibility enabled."),
     );
   }
   if (directives.hasElevatedDirective && directives.elevatedLevel) {

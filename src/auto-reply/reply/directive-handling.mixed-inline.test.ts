@@ -228,4 +228,46 @@ describe("mixed inline directives", () => {
 
     expect(sessionEntry.traceLevel).toBe("off");
   });
+
+  // DOJ-5368 (c): defense-in-depth. On a shared (group/channel) surface the
+  // diagnostic levels are keyed on the per-channel session, so /verbose, /trace
+  // and /reasoning stay non-sticky — even for the owner — so a stale "on" can
+  // never leak to bystanders on a later turn.
+  it("does not persist verbose/trace/reasoning on a multi-user surface even for the owner", async () => {
+    const directives = parseInlineDirectives(
+      "please reply\n/verbose on\n/trace raw\n/reasoning on",
+    );
+    const cfg = createConfig();
+    const sessionEntry = createSessionEntry({ chatType: "group", groupId: "discord:channel:C1" });
+    const sessionStore = { "agent:main:discord:channel:C1": sessionEntry };
+
+    await persistInlineDirectives({
+      directives,
+      cfg,
+      sessionEntry,
+      sessionStore,
+      sessionKey: "agent:main:discord:channel:C1",
+      storePath: undefined,
+      elevatedEnabled: false,
+      elevatedAllowed: false,
+      defaultProvider: "anthropic",
+      defaultModel: "claude-opus-4-6",
+      aliasIndex: { byAlias: new Map(), byKey: new Map() },
+      allowedModelKeys: new Set(),
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      initialModelLabel: "anthropic/claude-opus-4-6",
+      formatModelSwitchEvent: (label) => label,
+      agentCfg: cfg.agents?.defaults,
+      messageProvider: "discord",
+      surface: "discord",
+      gatewayClientScopes: [],
+      senderIsOwner: true,
+      multiUserSurface: true,
+    });
+
+    expect(sessionEntry.verboseLevel).toBeUndefined();
+    expect(sessionEntry.traceLevel).toBeUndefined();
+    expect(sessionEntry.reasoningLevel).toBeUndefined();
+  });
 });

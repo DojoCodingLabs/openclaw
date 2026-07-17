@@ -12,6 +12,7 @@ import type { ApplyInlineDirectivesFastLaneParams } from "./directive-handling.p
 import type { InlineDirectives } from "./directive-handling.parse.js";
 import { clearInlineDirectives } from "./get-reply-directives-utils.js";
 import type { createModelSelectionState } from "./model-selection.js";
+import { isMultiUserSurface } from "./multi-user-surface.js";
 import type { TypingController } from "./typing.js";
 
 type AgentDefaults = NonNullable<OpenClawConfig["agents"]>["defaults"];
@@ -250,6 +251,11 @@ export async function applyInlineDirectiveOverrides(params: {
     surface: ctx.Surface,
     gatewayClientScopes: ctx.GatewayClientScopes,
     senderIsOwner: command.senderIsOwner,
+    // DOJ-5368: keep /verbose, /trace, /reasoning non-sticky on shared surfaces.
+    multiUserSurface: isMultiUserSurface({
+      groupId: sessionEntry?.groupId,
+      chatType: ctx.ChatType,
+    }),
   };
 
   if (

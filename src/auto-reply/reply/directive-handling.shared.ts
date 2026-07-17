@@ -23,6 +23,13 @@ export const formatInternalVerbosePersistenceDeniedText = () =>
 export const formatInternalVerboseCurrentReplyOnlyText = () =>
   "Verbose logging set for the current reply only.";
 
+// DOJ-5368: on shared (group/channel) surfaces these diagnostics are keyed on
+// the per-channel session, so persisting one participant's level would leak
+// exec output / internal reasoning to everyone. They stay off and non-sticky.
+export const formatSharedChannelDiagnosticDeniedText = (
+  directive: "Verbose logging" | "Trace" | "Reasoning visibility",
+) => `${directive} stays off in shared channels to avoid leaking to other participants; not saved.`;
+
 function canPersistInternalDirective(params: {
   messageProvider?: string;
   surface?: string;

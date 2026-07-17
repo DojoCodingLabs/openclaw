@@ -40,6 +40,7 @@ import {
   createModelSelectionState,
   resolveContextTokens,
 } from "./model-selection.js";
+import { isMultiUserSurface } from "./multi-user-surface.js";
 import { formatElevatedUnavailableMessage, resolveElevatedPermissions } from "./reply-elevated.js";
 import { stripInlineStatus } from "./reply-inline.js";
 import { resolveRuntimePolicySessionKey } from "./runtime-policy-session-key.js";
@@ -576,6 +577,16 @@ export async function resolveReplyDirectives(params: {
     !thinkingExplicitlySet
   ) {
     resolvedReasoningLevel = await modelState.resolveDefaultReasoningLevel();
+  }
+
+  // DOJ-5368: reasoning visibility (<think>) is keyed on the per-channel group
+  // session, not per participant. Force it off on shared surfaces so an
+  // authorized owner/admin turn does not broadcast internal reasoning to every
+  // participant. This resolution-time cut (after the model-capability default is
+  // applied) also stops the agent from generating <think> for the turn. Direct
+  // messages keep their resolved level unchanged.
+  if (isMultiUserSurface({ groupId: groupResolution?.id, chatType: sessionCtx.ChatType })) {
+    resolvedReasoningLevel = "off";
   }
 
   let contextTokens = useFastReplyRuntime
