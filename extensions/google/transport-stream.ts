@@ -107,9 +107,28 @@ type MutableAssistantOutput = {
   timestamp: number;
   responseId?: string;
   errorMessage?: string;
+  webGrounding?: TransportWebGrounding;
 };
 
 const GOOGLE_VERTEX_DEFAULT_API_VERSION = "v1";
+
+type GoogleGroundingMetadata = {
+  webSearchQueries?: string[];
+  groundingChunks?: Array<{
+    web?: { title?: string; uri?: string; domain?: string };
+  }>;
+  groundingSupports?: Array<{ groundingChunkIndices?: number[] }>;
+};
+
+/**
+ * Normalized Google Search grounding payload attached to the assistant
+ * output message. Consumers (gateway plugins, the OpenAI-compat endpoint)
+ * read it as `(message as { webGrounding?: TransportWebGrounding })`.
+ */
+export type TransportWebGrounding = {
+  queries: string[];
+  sources: Array<{ title: string; url: string; cited?: number }>;
+};
 
 type GoogleSseChunk = {
   responseId?: string;
@@ -127,6 +146,7 @@ type GoogleSseChunk = {
       }>;
     };
     finishReason?: string;
+    groundingMetadata?: GoogleGroundingMetadata;
   }>;
   usageMetadata?: {
     promptTokenCount?: number;
@@ -690,6 +710,59 @@ function convertGoogleTools(tools: NonNullable<Context["tools"]>) {
   ];
 }
 
+/**
+ * Server-side Google Search grounding (opt-in via env). When enabled the
+ * request carries the `google_search` built-in tool; mixing it with
+ * `functionDeclarations` additionally requires
+ * `toolConfig.includeServerSideToolInvocations` (the API 400s without it).
+ * The resulting `groundingMetadata` is normalized onto the assistant output
+ * as `webGrounding`.
+ */
+function isGoogleSearchGroundingEnabled(): boolean {
+  const raw = process.env.OPENCLAW_GOOGLE_GROUNDING?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "on";
+}
+
+function mergeWebGrounding(
+  output: MutableAssistantOutput,
+  metadata: GoogleGroundingMetadata,
+): void {
+  const grounding = (output.webGrounding ??= { queries: [], sources: [] });
+  for (const query of metadata.webSearchQueries ?? []) {
+    if (typeof query === "string" && query && !grounding.queries.includes(query)) {
+      grounding.queries.push(query);
+    }
+  }
+  // Citation counts per chunk index (`groundingSupports`) let consumers rank
+  // sources by how often the answer actually cited them.
+  const citeCounts = new Map<number, number>();
+  for (const support of metadata.groundingSupports ?? []) {
+    for (const idx of support?.groundingChunkIndices ?? []) {
+      if (typeof idx === "number") {
+        citeCounts.set(idx, (citeCounts.get(idx) ?? 0) + 1);
+      }
+    }
+  }
+  const chunks = metadata.groundingChunks ?? [];
+  for (let idx = 0; idx < chunks.length; idx++) {
+    const chunk = chunks[idx];
+    const url = chunk?.web?.uri;
+    if (typeof url !== "string" || !url) {
+      continue;
+    }
+    const existing = grounding.sources.find((source) => source.url === url);
+    if (existing) {
+      existing.cited = (existing.cited ?? 0) + (citeCounts.get(idx) ?? 0);
+      continue;
+    }
+    grounding.sources.push({
+      title: chunk.web?.title || chunk.web?.domain || url,
+      url,
+      cited: citeCounts.get(idx) ?? 0,
+    });
+  }
+}
+
 export function buildGoogleGenerativeAiParams(
   model: GoogleTransportModel,
   context: Context,
@@ -731,6 +804,15 @@ export function buildGoogleGenerativeAiParams(
     if (toolChoice) {
       params.toolConfig = {
         functionCallingConfig: toolChoice,
+      };
+    }
+  }
+  if (isGoogleSearchGroundingEnabled()) {
+    params.tools = [...(params.tools ?? []), { google_search: {} }];
+    if (context.tools?.length) {
+      params.toolConfig = {
+        ...params.toolConfig,
+        includeServerSideToolInvocations: true,
       };
     }
   }
@@ -1241,6 +1323,9 @@ function createGoogleTransportStreamFn(kind: CanonicalGoogleTransportApi): Strea
           output.responseId ||= chunk.responseId;
           updateUsage(output, model, chunk);
           const candidate = chunk.candidates?.[0];
+          if (candidate?.groundingMetadata) {
+            mergeWebGrounding(output, candidate.groundingMetadata);
+          }
           if (candidate?.content?.parts) {
             for (const part of candidate.content.parts) {
               const hasThoughtSignature =
