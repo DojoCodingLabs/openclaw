@@ -753,6 +753,26 @@ export function handleMessageEnd(
     ctx.state.lastStreamedAssistantCleaned = cleanedText;
   }
 
+  // Server-side Google Search grounding (OPENCLAW_GOOGLE_GROUNDING): the
+  // transport normalizes `groundingMetadata` onto the assistant message as
+  // `webGrounding`. Surface it as its own event stream so channel consumers
+  // (e.g. the OpenAI-compat endpoint) can forward the cited sources.
+  const webGrounding = (
+    assistantMessage as { webGrounding?: { queries: string[]; sources: unknown[] } }
+  ).webGrounding;
+  if (webGrounding && webGrounding.sources.length > 0) {
+    const groundingData = webGrounding as unknown as Record<string, unknown>;
+    emitAgentEvent({
+      runId: ctx.params.runId,
+      stream: "grounding",
+      data: groundingData,
+    });
+    void ctx.params.onAgentEvent?.({
+      stream: "grounding",
+      data: groundingData,
+    });
+  }
+
   const silentExpectedWithoutSentinel =
     ctx.params.silentExpected && !isSilentReplyText(trimmedText, SILENT_REPLY_TOKEN);
   const finalAssistantText = silentExpectedWithoutSentinel ? "" : text;
