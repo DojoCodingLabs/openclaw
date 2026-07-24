@@ -544,7 +544,7 @@ export function buildGoogleGenerativeAiParams(
     params.tools = [...(params.tools ?? []), { google_search: {} }];
     if (context.tools?.length) {
       params.toolConfig = {
-        ...(params.toolConfig ?? {}),
+        ...params.toolConfig,
         includeServerSideToolInvocations: true,
       };
     }
