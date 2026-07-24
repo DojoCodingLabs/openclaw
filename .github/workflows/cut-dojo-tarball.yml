@@ -10,6 +10,10 @@ on:
       tag:
         description: 'Release tag (e.g. v2026.5.22-dojo.3)'
         required: true
+      notes:
+        description: 'Release notes (one line)'
+        required: false
+        default: 'Dojo fork tarball'
 
 jobs:
   cut:
@@ -23,8 +27,8 @@ jobs:
           install-bun: "false"
       - name: Build fork + Control UI
         run: |
-          node scripts/build-all.mjs
-          node scripts/ui.js build
+          pnpm build
+          pnpm ui:build
       - name: Pack tarball
         id: pack
         run: |
@@ -38,6 +42,6 @@ jobs:
         run: |
           gh release create "${{ inputs.tag }}" "${{ steps.pack.outputs.tgz }}" \
             --title "${{ inputs.tag }}" \
-            --notes "AGT-051 — route retry steers through the system channel (nudge leak fix)."
+            --notes "${{ inputs.notes }}"
           echo "SHA256 for the plugin Dockerfile ARG:"
           sha256sum "${{ steps.pack.outputs.tgz }}"
