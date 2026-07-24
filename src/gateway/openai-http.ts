@@ -159,6 +159,25 @@ function writeAssistantContentChunk(
   });
 }
 
+/**
+ * Content-free chunk carrying Google Search grounding sources (queries +
+ * cited URLs) emitted by the `grounding` agent-event stream. Standard OpenAI
+ * clients ignore the unknown `dojo_grounding` delta field; the Dojo web-chat
+ * proxy consumes it to render a cited-sources card.
+ */
+function writeGroundingChunk(
+  res: ServerResponse,
+  params: { runId: string; model: string; grounding: Record<string, unknown> },
+) {
+  writeSse(res, {
+    id: params.runId,
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model: params.model,
+    choices: [{ index: 0, delta: { dojo_grounding: params.grounding } }],
+  });
+}
+
 function asMessages(val: unknown): OpenAiChatMessage[] {
   return Array.isArray(val) ? (val as OpenAiChatMessage[]) : [];
 }
@@ -561,6 +580,15 @@ export async function handleOpenAiHttpRequest(
       return;
     }
     if (closed) {
+      return;
+    }
+
+    if (evt.stream === "grounding") {
+      if (!wroteRole) {
+        wroteRole = true;
+        writeAssistantRoleChunk(res, { runId, model });
+      }
+      writeGroundingChunk(res, { runId, model, grounding: evt.data ?? {} });
       return;
     }
 
