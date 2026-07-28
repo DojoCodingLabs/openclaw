@@ -59,11 +59,21 @@ describe("google provider plugin hooks", () => {
       allowSyntheticToolResults: true,
     });
 
+    // Gemini 3.x emits native `thought` parts; asking it for <think> tags on
+    // top made it narrate the tag instruction instead of following it.
     expect(
       provider.resolveReasoningOutputMode?.({
         provider: "google",
         modelApi: "google-generative-ai",
         modelId: "gemini-3.1-pro-preview",
+      } as never),
+    ).toBe("native");
+
+    expect(
+      provider.resolveReasoningOutputMode?.({
+        provider: "google",
+        modelApi: "google-generative-ai",
+        modelId: "gemini-2.5-flash",
       } as never),
     ).toBe("tagged");
 

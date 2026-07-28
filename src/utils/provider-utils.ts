@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { hasNativeGeminiThoughtParts } from "../plugins/provider-replay-helpers.js";
 import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
 import { resolveProviderReasoningOutputModeWithPlugin } from "../plugins/provider-runtime.js";
 import {
@@ -51,7 +52,7 @@ export function resolveReasoningOutputMode(params: {
   const builtInMode =
     BUILTIN_REASONING_OUTPUT_MODES[normalized as keyof typeof BUILTIN_REASONING_OUTPUT_MODES];
   if (builtInMode) {
-    return builtInMode;
+    return hasNativeGeminiThoughtParts(params.modelId) ? "native" : builtInMode;
   }
 
   // Keep a tiny built-in fallback for non-plugin Google surfaces.
