@@ -12,6 +12,8 @@ import {
   buildOpenAICompatibleReplayPolicy,
   buildPassthroughGeminiSanitizingReplayPolicy,
   buildStrictAnthropicReplayPolicy,
+  hasNativeGeminiThoughtParts,
+  resolveGoogleGeminiReasoningOutputMode,
   resolveTaggedReasoningOutputMode,
   sanitizeGoogleGeminiReplayHistory,
 } from "../plugins/provider-replay-helpers.js";
@@ -58,6 +60,8 @@ export {
   buildNativeAnthropicReplayPolicyForModel,
   buildOpenAICompatibleReplayPolicy,
   buildPassthroughGeminiSanitizingReplayPolicy,
+  hasNativeGeminiThoughtParts,
+  resolveGoogleGeminiReasoningOutputMode,
   resolveTaggedReasoningOutputMode,
   sanitizeGoogleGeminiReplayHistory,
   buildStrictAnthropicReplayPolicy,
@@ -131,8 +135,8 @@ export function buildProviderReplayFamilyHooks(
         buildReplayPolicy: () => buildGoogleGeminiReplayPolicy(),
         sanitizeReplayHistory: (ctx: ProviderSanitizeReplayHistoryContext) =>
           sanitizeGoogleGeminiReplayHistory(ctx),
-        resolveReasoningOutputMode: (_ctx: ProviderReasoningOutputModeContext) =>
-          resolveTaggedReasoningOutputMode(),
+        resolveReasoningOutputMode: (ctx: ProviderReasoningOutputModeContext) =>
+          resolveGoogleGeminiReasoningOutputMode(ctx),
       };
     case "passthrough-gemini":
       return {

@@ -30,6 +30,31 @@ describe("resolveReasoningOutputMode", () => {
     },
   );
 
+  // Gemini 3.x streams native `thought` parts. Asking it for <think> tags on top
+  // made it narrate the tag instruction as prose, leaking the chain-of-thought
+  // (and internal tool names) into the answer.
+  it.each([
+    ["gemini-3.6-flash", "native"],
+    ["gemini-3-flash", "native"],
+    ["gemini-3.1-pro-preview", "native"],
+    ["gemini-2.5-flash", "tagged"],
+    ["gemini-2.5-flash-lite", "tagged"],
+  ] as const)("built-in map resolves %s to %s", (modelId, expected) => {
+    expect(
+      resolveReasoningOutputMode({
+        provider: "google-generative-ai",
+        modelId,
+        workspaceDir: process.cwd(),
+      }),
+    ).toBe(expected);
+  });
+
+  it("keeps the built-in tagged mode when no model is known", () => {
+    expect(
+      resolveReasoningOutputMode({ provider: "google-generative-ai", workspaceDir: process.cwd() }),
+    ).toBe("tagged");
+  });
+
   it.each([
     ["google", "tagged"],
     ["Google", "tagged"],
