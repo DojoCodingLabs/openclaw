@@ -35,11 +35,27 @@ describe("buildProviderReplayFamilyHooks", () => {
         reasoningMode: undefined,
       },
       {
+        // Gemini 3.x emits native `thought` parts — tagging on top made it
+        // narrate the tag instruction instead of following it.
         family: "google-gemini" as const,
         ctx: {
           provider: "google",
           modelApi: "google-generative-ai",
           modelId: "gemini-3.1-pro-preview",
+        },
+        match: {
+          validateGeminiTurns: true,
+          allowSyntheticToolResults: true,
+        },
+        hasSanitizeReplayHistory: true,
+        reasoningMode: "native",
+      },
+      {
+        family: "google-gemini" as const,
+        ctx: {
+          provider: "google",
+          modelApi: "google-generative-ai",
+          modelId: "gemini-2.5-flash",
         },
         match: {
           validateGeminiTurns: true,
