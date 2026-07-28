@@ -227,3 +227,19 @@ export function sanitizeGoogleGeminiReplayHistory(
 export function resolveTaggedReasoningOutputMode(): ProviderReasoningOutputMode {
   return "tagged";
 }
+
+/**
+ * Gemini 3.x streams reasoning as native `thought` parts, which the Google
+ * transport already routes into thinking blocks. Asking it for `<think>` tags
+ * on top of that makes it narrate the tag instruction itself instead of
+ * following it, and the chain-of-thought lands in the text stream verbatim.
+ */
+export function hasNativeGeminiThoughtParts(modelId: string | undefined | null): boolean {
+  return /gemini-3(?:\.\d+)?-(?:pro|flash)/.test(normalizeLowercaseStringOrEmpty(modelId));
+}
+
+export function resolveGoogleGeminiReasoningOutputMode(
+  ctx: ProviderReplayPolicyContext,
+): ProviderReasoningOutputMode {
+  return hasNativeGeminiThoughtParts(ctx.modelId) ? "native" : resolveTaggedReasoningOutputMode();
+}
