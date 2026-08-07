@@ -40,6 +40,7 @@ import {
   resolveRunAuthProfile,
 } from "./agent-runner-utils.js";
 import { resolveFollowupDeliveryPayloads } from "./followup-delivery.js";
+import { isMultiUserSurface } from "./multi-user-surface.js";
 import { resolveOriginMessageProvider } from "./origin-routing.js";
 import {
   completeFollowupRunLifecycle,
@@ -391,7 +392,10 @@ export function createFollowupRunner(params: {
       if (run !== effectiveQueued.run) {
         effectiveQueued = { ...effectiveQueued, run };
       }
-      const shouldEmitVerboseProgress = () => run.verboseLevel !== "off";
+      // DOJ-5368: never stream tool-progress/tool-output onto a shared surface,
+      // even if verbose is persisted on the per-channel group session.
+      const multiUserEgress = isMultiUserSurface({ groupId: run.groupId });
+      const shouldEmitVerboseProgress = () => run.verboseLevel !== "off" && !multiUserEgress;
       const shouldSuppressDefaultToolProgressMessages = () =>
         opts?.suppressDefaultToolProgressMessages === true && !shouldEmitVerboseProgress();
       const shouldEmitToolResultProgress = () =>

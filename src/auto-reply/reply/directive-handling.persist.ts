@@ -94,6 +94,9 @@ export async function persistInlineDirectives(params: {
   surface?: string;
   gatewayClientScopes?: string[];
   senderIsOwner?: boolean;
+  // DOJ-5368: when the reply targets a shared (group/channel) surface, verbose /
+  // trace / reasoning must not persist onto the per-channel session.
+  multiUserSurface?: boolean;
   markLiveSwitchPending?: boolean;
   thinkingCatalog?: ModelCatalogEntry[];
 }): Promise<{
@@ -131,6 +134,8 @@ export async function persistInlineDirectives(params: {
     surface: params.surface,
     gatewayClientScopes: params.gatewayClientScopes,
   });
+  // DOJ-5368: shared surfaces keep /verbose, /trace, /reasoning non-sticky.
+  const persistDiagnosticsAllowed = params.multiUserSurface !== true;
   const thinkingCatalog =
     params.thinkingCatalog && params.thinkingCatalog.length > 0
       ? params.thinkingCatalog
@@ -153,7 +158,9 @@ export async function persistInlineDirectives(params: {
       elevatedEnabled &&
       elevatedAllowed;
     let reasoningChanged =
-      directives.hasReasoningDirective && directives.reasoningLevel !== undefined;
+      persistDiagnosticsAllowed &&
+      directives.hasReasoningDirective &&
+      directives.reasoningLevel !== undefined;
     let updated = false;
 
     if (directives.clearThinkLevel) {
@@ -174,7 +181,8 @@ export async function persistInlineDirectives(params: {
     if (
       directives.hasVerboseDirective &&
       directives.verboseLevel &&
-      allowInternalVerbosePersistence
+      allowInternalVerbosePersistence &&
+      persistDiagnosticsAllowed
     ) {
       applyVerboseOverride(sessionEntry, directives.verboseLevel);
       updated = true;
@@ -182,12 +190,17 @@ export async function persistInlineDirectives(params: {
     if (
       directives.hasTraceDirective &&
       directives.traceLevel &&
-      (params.senderIsOwner || delegatedTraceAllowed)
+      (params.senderIsOwner || delegatedTraceAllowed) &&
+      persistDiagnosticsAllowed
     ) {
       applyTraceOverride(sessionEntry, directives.traceLevel);
       updated = true;
     }
-    if (directives.hasReasoningDirective && directives.reasoningLevel) {
+    if (
+      persistDiagnosticsAllowed &&
+      directives.hasReasoningDirective &&
+      directives.reasoningLevel
+    ) {
       if (directives.reasoningLevel === "off") {
         // Persist explicit off so it overrides model-capability defaults.
         sessionEntry.reasoningLevel = "off";

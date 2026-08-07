@@ -418,6 +418,70 @@ describe("resolveReplyDirectives", () => {
     });
   });
 
+  // DOJ-5368: reasoning visibility must be forced off on shared surfaces even
+  // for an authorized sender, so an owner's turn never broadcasts <think> to the
+  // channel. Verbose is NOT cut here (it is gated at egress), so it stays as
+  // resolved — this isolates the reasoning resolution cut.
+  it("forces reasoning off on a group surface even for an authorized sender", async () => {
+    const targetSessionEntry = makeSessionEntry({
+      sessionId: "group-session",
+      verboseLevel: "full",
+      reasoningLevel: "high",
+    });
+
+    const result = await resolveReplyDirectives({
+      ctx: buildTestCtx({
+        Body: "hello",
+        CommandBody: "hello",
+        CommandAuthorized: true,
+      }),
+      cfg: {},
+      agentId: "main",
+      agentDir: "/tmp/main-agent",
+      workspaceDir: "/tmp",
+      agentCfg: {},
+      sessionCtx: {
+        Body: "hello",
+        BodyStripped: "hello",
+        BodyForAgent: "hello",
+        CommandBody: "hello",
+        Provider: "whatsapp",
+        ChatType: "group",
+      } as TemplateContext,
+      sessionEntry: targetSessionEntry,
+      sessionStore: {
+        "agent:main:whatsapp:group:g1": targetSessionEntry,
+      },
+      sessionKey: "agent:main:whatsapp:group:g1",
+      storePath: "/tmp/sessions.json",
+      sessionScope: "per-sender",
+      groupResolution: {
+        key: "whatsapp:group:g1",
+        channel: "whatsapp",
+        id: "g1",
+        chatType: "group",
+      },
+      isGroup: true,
+      triggerBodyNormalized: "hello",
+      resetTriggered: false,
+      commandAuthorized: true,
+      defaultProvider: "openai",
+      defaultModel: "gpt-4o-mini",
+      aliasIndex: { byAlias: new Map(), byKey: new Map() },
+      provider: "openai",
+      model: "gpt-4o-mini",
+      hasResolvedHeartbeatModelOverride: false,
+      typing: makeTypingController(),
+      opts: undefined,
+      skillFilter: undefined,
+    });
+
+    expectContinueResult(result, {
+      resolvedReasoningLevel: "off",
+      resolvedVerboseLevel: "full",
+    });
+  });
+
   it("returns a directive-only ack for trace commands instead of continuing into the agent path", async () => {
     mocks.applyInlineDirectiveOverrides.mockResolvedValueOnce({
       kind: "reply",

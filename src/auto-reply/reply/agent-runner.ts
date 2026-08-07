@@ -81,6 +81,7 @@ import { createAudioAsVoiceBuffer, createBlockReplyPipeline } from "./block-repl
 import { resolveEffectiveBlockStreamingConfig } from "./block-streaming.js";
 import { createFollowupRunner } from "./followup-runner.js";
 import { REPLY_RUN_STILL_SHUTTING_DOWN_TEXT } from "./get-reply-run-queue.js";
+import { isMultiUserSurface } from "./multi-user-surface.js";
 import { resolveOriginMessageProvider, resolveOriginMessageTo } from "./origin-routing.js";
 import { sanitizePendingFinalDeliveryText } from "./pending-final-delivery.js";
 import { drainPendingToolTasks } from "./pending-tool-task-drain.js";
@@ -1533,7 +1534,15 @@ export async function runReplyAgent(params: {
     const modelUsed = runResult.meta?.agentMeta?.model ?? fallbackModel ?? defaultModel;
     const providerUsed =
       runResult.meta?.agentMeta?.provider ?? fallbackProvider ?? followupRun.run.provider;
-    const verboseEnabled = resolvedVerboseLevel !== "off";
+    // DOJ-5368: verbose/trace/reasoning are keyed on the per-channel group
+    // session, not per participant, so one member enabling them would broadcast
+    // raw exec commands and internal reasoning to everyone. Gate all diagnostic
+    // egress off on shared surfaces; direct messages keep prior behaviour.
+    const multiUserEgress = isMultiUserSurface({
+      groupId: followupRun.run.groupId,
+      chatType: sessionCtx.ChatType,
+    });
+    const verboseEnabled = resolvedVerboseLevel !== "off" && !multiUserEgress;
     const fallbackStateEntry =
       activeSessionEntry ?? (sessionKey ? activeSessionStore?.[sessionKey] : undefined);
     const configuredFallbackModel = resolveConfiguredFallbackModel({
@@ -2040,16 +2049,20 @@ export async function runReplyAgent(params: {
           }
         : {}),
     } satisfies TraceContextManagementView;
-    const sessionUsage =
-      traceAuthorized && activeSessionEntry?.traceLevel === "raw"
-        ? await accumulateSessionUsageFromTranscript({
-            sessionId: runResult.meta?.agentMeta?.sessionId ?? followupRun.run.sessionId,
-            storePath,
-            sessionFile: followupRun.run.sessionFile,
-          })
-        : undefined;
+    // DOJ-5368: even an owner/admin's own turn must not broadcast raw trace or
+    // usage to bystanders in a shared channel.
+    const traceRawEgressAllowed =
+      traceAuthorized && activeSessionEntry?.traceLevel === "raw" && !multiUserEgress;
+    const sessionUsage = traceRawEgressAllowed
+      ? await accumulateSessionUsageFromTranscript({
+          sessionId: runResult.meta?.agentMeta?.sessionId ?? followupRun.run.sessionId,
+          storePath,
+          sessionFile: followupRun.run.sessionFile,
+        })
+      : undefined;
     const traceEnabledForSender =
       traceAuthorized &&
+      !multiUserEgress &&
       (activeSessionEntry?.traceLevel === "on" || activeSessionEntry?.traceLevel === "raw");
     const shouldAppendTracePayload = verboseEnabled || traceEnabledForSender;
     let trailingPluginStatusPayload: ReplyPayload | undefined;
@@ -2058,27 +2071,26 @@ export async function runReplyAgent(params: {
         entry: activeSessionEntry,
         includeTraceLines: traceEnabledForSender,
       });
-      const rawTracePayload =
-        traceAuthorized && activeSessionEntry?.traceLevel === "raw"
-          ? buildInlineRawTracePayload({
-              entry: activeSessionEntry,
-              rawUserText,
-              rawAssistantText,
-              sessionUsage,
-              usage: runResult.meta?.agentMeta?.usage,
-              lastCallUsage: runResult.meta?.agentMeta?.lastCallUsage,
-              provider: providerUsed,
-              model: modelUsed,
-              contextLimit: contextTokensUsed,
-              promptTokens,
-              executionTrace,
-              requestShaping,
-              promptSegments,
-              toolSummary,
-              completion,
-              contextManagement,
-            })
-          : undefined;
+      const rawTracePayload = traceRawEgressAllowed
+        ? buildInlineRawTracePayload({
+            entry: activeSessionEntry,
+            rawUserText,
+            rawAssistantText,
+            sessionUsage,
+            usage: runResult.meta?.agentMeta?.usage,
+            lastCallUsage: runResult.meta?.agentMeta?.lastCallUsage,
+            provider: providerUsed,
+            model: modelUsed,
+            contextLimit: contextTokensUsed,
+            promptTokens,
+            executionTrace,
+            requestShaping,
+            promptSegments,
+            toolSummary,
+            completion,
+            contextManagement,
+          })
+        : undefined;
       trailingPluginStatusPayload =
         pluginStatusPayload && rawTracePayload
           ? { text: `${pluginStatusPayload.text}\n\n${rawTracePayload.text}` }
