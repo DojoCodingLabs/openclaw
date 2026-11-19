@@ -1,3 +1,22 @@
+> [!WARNING]
+> **Status: retired on 2026-11-19. This fork is read-only and kept for reference.**
+>
+> **What this was:** Dojo's fork of [OpenClaw](https://github.com/openclaw/openclaw). Its `dojo/*-fixes` branches and `-dojo.N` release tarballs were the gateway that ran Doji, Dojo's AI assistant, together with the plugin [`DojoCodingLabs/dojo-agent-openclaw-plugin`](https://github.com/DojoCodingLabs/dojo-agent-openclaw-plugin).
+>
+> **What replaced it:**
+> - Doji chat is now [`DojoCodingLabs/doji-agent`](https://github.com/DojoCodingLabs/doji-agent), a stateless service on Vercel. It needs no gateway.
+> - The channels this gateway served for Doji (Slack, WhatsApp) were **not replaced. They were retired by decision.**
+>
+> **Runtime:** the GCP Cloud Run runtime that ran this gateway (project `dojo-agent-platform`) has been shut down.
+>
+> **Decommission record:** [`dojo-infra-gitops/openspec/changes/2026-08-07-decommission-dojo-agent-platform`](https://github.com/DojoCodingLabs/dojo-infra-gitops/tree/main/openspec/changes/2026-08-07-decommission-dojo-agent-platform), plus item 7.4 of [`doji-agent/docs/IMPROVEMENTS.md`](https://github.com/DojoCodingLabs/doji-agent/blob/main/docs/IMPROVEMENTS.md).
+>
+> **Do not deploy this fork** and do not cut new `-dojo` releases from it. Ask the Dojo platform team before reviving it. For OpenClaw itself, use the upstream [`openclaw/openclaw`](https://github.com/openclaw/openclaw).
+
+---
+
+_The upstream OpenClaw README follows, unchanged, as historical reference._
+
 # 🦞 OpenClaw — Personal AI Assistant
 
 <p align="center">
